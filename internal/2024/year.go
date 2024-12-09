@@ -9,6 +9,7 @@ import (
 	"github.com/AnasImloul/advent-of-code-golang/internal/2024/day_06"
 	"github.com/AnasImloul/advent-of-code-golang/internal/2024/day_07"
 	"github.com/AnasImloul/advent-of-code-golang/internal/2024/day_08"
+	"github.com/AnasImloul/advent-of-code-golang/internal/2024/day_09"
 )
 
 func Run(day int, part string) any {
@@ -29,6 +30,8 @@ func Run(day int, part string) any {
 		return day_07.Solver.Solve(part)
 	case 8:
 		return day_08.Solver.Solve(part)
+	case 9:
+		return day_09.Solver.Solve(part)
 	default:
 		return nil
 	}
