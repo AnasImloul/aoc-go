@@ -112,3 +112,22 @@ func Pow10(n int) int {
 	}
 	return res
 }
+
+func MakeGrid[T any](n, m int, initialValue T) [][]T {
+	res := make([][]T, n)
+	for i := 0; i < n; i++ {
+		res[i] = make([]T, m)
+		for j := 0; j < m; j++ {
+			res[i][j] = initialValue
+		}
+	}
+	return res
+}
+
+func GridSize(grid [][]int) (int, int) {
+	return len(grid), len(grid[0])
+}
+
+func IsOutOfBounds(i, j, n, m int) bool {
+	return i < 0 || i >= n || j < 0 || j >= m
+}
