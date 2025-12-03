@@ -83,7 +83,7 @@ import (
 	"github.com/AnasImloul/aoc-go/pkg/runner"
 
 	// Import your solutions here - they register themselves via init()
-	// Example: _ "%s/solutions/2024/day01"
+	// Solutions are automatically added when you run: aoc-go generate <year> <day>
 )
 
 func main() {
