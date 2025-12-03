@@ -183,8 +183,29 @@ func updateMainFile(moduleName string, year, day int) error {
 		return nil
 	}
 
-	// Find the import block and add the new import
-	importBlockEnd := strings.LastIndex(contentStr, ")")
+	// Find the import block - look for "import (" and find the matching ")"
+	importStart := strings.Index(contentStr, "import (")
+	if importStart == -1 {
+		return fmt.Errorf("could not find import block in main.go")
+	}
+
+	// Find the closing parenthesis of the import block
+	// Start searching from after "import ("
+	searchStart := importStart + len("import (")
+	depth := 1
+	importBlockEnd := -1
+	for i := searchStart; i < len(contentStr); i++ {
+		if contentStr[i] == '(' {
+			depth++
+		} else if contentStr[i] == ')' {
+			depth--
+			if depth == 0 {
+				importBlockEnd = i
+				break
+			}
+		}
+	}
+
 	if importBlockEnd == -1 {
 		return fmt.Errorf("could not find end of import block in main.go")
 	}
