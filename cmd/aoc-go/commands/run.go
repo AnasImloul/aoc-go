@@ -1,13 +1,16 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AnasImloul/aoc-go/internal/part"
-	"github.com/AnasImloul/aoc-go/pkg/runner"
 	"github.com/spf13/cobra"
 )
 
@@ -30,22 +33,83 @@ var RunCmd = &cobra.Command{
 			log.Fatalf("Invalid part: %s (must be '1', '2', 'first', or 'second')", args[2])
 		}
 
-		// Start timer
-		start := time.Now()
+		// Check if we're in a project directory with main.go
+		if _, err := os.Stat("main.go"); err == nil {
+			runProjectSolution(year, day, p)
+			return
+		}
 
-		// Execute solution
-		result := runner.Solution(year, day, p)
-
-		// End timer
-		elapsed := time.Since(start)
-
-		fmt.Printf("\nAnswer: %v\n", result)
-		fmt.Printf("Time:   %s\n\n", formatExecutionTime(elapsed.Microseconds()))
+		log.Fatal("No main.go found in current directory. Please run this command from your aoc-go project root.")
 	},
 }
 
 func init() {
 	RunCmd.Flags().BoolP("save-stats", "s", true, "Save statistics to stats.json")
+}
+
+func runProjectSolution(year, day int, p string) {
+	// Convert part to numeric for the project's main.go
+	partNum := "1"
+	if p == "second" {
+		partNum = "2"
+	}
+
+	// Start timer
+	start := time.Now()
+
+	// Run the project's main.go
+	cmd := exec.Command("go", "run", ".", strconv.Itoa(year), strconv.Itoa(day), partNum)
+	cmd.Dir, _ = os.Getwd()
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	elapsed := time.Since(start)
+
+	// Check stderr for compilation errors
+	stderrStr := stderr.String()
+	if strings.Contains(stderrStr, "build") || strings.Contains(stderrStr, "cannot find") || strings.Contains(stderrStr, "undefined") {
+		fmt.Fprintf(os.Stderr, "%s", stderrStr)
+		os.Exit(1)
+	}
+
+	// Check if it's a "no solution found" message
+	stdoutStr := stdout.String()
+	if strings.Contains(stdoutStr, "No solution found") {
+		fmt.Printf("\nNo solution registered for year %d day %d part %s\n", year, day, p)
+		fmt.Println("Make sure the solution is imported in main.go")
+		os.Exit(1)
+	}
+
+	if err != nil {
+		// Show any error output
+		if stderrStr != "" {
+			fmt.Fprintf(os.Stderr, "%s", stderrStr)
+		}
+		if stdoutStr != "" {
+			fmt.Print(stdoutStr)
+		}
+		os.Exit(1)
+	}
+
+	// Parse the output to extract just the answer
+	answer := parseAnswer(stdoutStr)
+
+	fmt.Printf("\nAnswer: %v\n", answer)
+	fmt.Printf("Time:   %s\n\n", formatExecutionTime(elapsed.Microseconds()))
+}
+
+func parseAnswer(output string) string {
+	// The project's main.go outputs "Answer: <value>"
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Answer: ") {
+			return strings.TrimPrefix(line, "Answer: ")
+		}
+	}
+	return strings.TrimSpace(output)
 }
 
 func formatExecutionTime(micros int64) string {
