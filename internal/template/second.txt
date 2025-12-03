@@ -1,6 +1,0 @@
-package day_XX
-
-
-func (d Day) secondPart() any {
-    return nil
-}

@@ -1,0 +1,75 @@
+version: 2
+
+project_name: aoc-go
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: aoc-go
+    main: ./cmd/aoc-go
+    binary: aoc-go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - id: aoc-go
+    builds:
+      - aoc-go
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - name: aoc-go
+    repository:
+      owner: AnasImloul
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/AnasImloul/aoc-go"
+    description: "CLI tool for managing and running Advent of Code solutions in Go"
+    license: "MIT"
+    test: |
+      system "#{bin}/aoc-go", "--version"
+    install: |
+      bin.install "aoc-go"
+
+release:
+  github:
+    owner: AnasImloul
+    name: aoc-go
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+

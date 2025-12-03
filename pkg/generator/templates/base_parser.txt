@@ -1,0 +1,44 @@
+package dayXX
+
+import (
+	"strings"
+
+	"github.com/AnasImloul/aoc-go/pkg/registry"
+	"github.com/AnasImloul/aoc-go/pkg/solver"
+)
+
+type Day struct {
+	solver.Base
+	tokens []string
+	data   interface{}
+}
+
+var Solver = &Day{
+	Base: solver.Base{
+		Year: YEAR,
+		Day:  XX,
+	},
+}
+
+func init() {
+	Solver.FirstPart = Solver.firstPart
+	Solver.SecondPart = Solver.secondPart
+	Solver.ParseFunc = Solver.parse
+	registry.Register(YEAR, XX, Solver)
+}
+
+func (d *Day) parse(input string) error {
+	// Tokenize input
+	d.tokens = strings.Fields(input)
+	
+	// TODO: Parse tokens into structured data
+	
+	return nil
+}
+
+func (d *Day) parseToken(token string) interface{} {
+	// TODO: Implement token parsing logic
+	return nil
+}
+
+

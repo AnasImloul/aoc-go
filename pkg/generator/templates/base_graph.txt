@@ -1,0 +1,76 @@
+package dayXX
+
+import (
+	"github.com/AnasImloul/aoc-go/pkg/registry"
+	"github.com/AnasImloul/aoc-go/pkg/solver"
+)
+
+type Day struct {
+	solver.Base
+	graph map[string][]string
+	nodes []string
+}
+
+var Solver = &Day{
+	Base: solver.Base{
+		Year: YEAR,
+		Day:  XX,
+	},
+}
+
+func init() {
+	Solver.FirstPart = Solver.firstPart
+	Solver.SecondPart = Solver.secondPart
+	Solver.ParseFunc = Solver.parse
+	registry.Register(YEAR, XX, Solver)
+}
+
+func (d *Day) parse(input string) error {
+	d.graph = make(map[string][]string)
+	d.nodes = make([]string, 0)
+	
+	// TODO: Parse input into graph structure
+	
+	return nil
+}
+
+func (d *Day) addEdge(from, to string) {
+	d.graph[from] = append(d.graph[from], to)
+}
+
+func (d *Day) getNeighbors(node string) []string {
+	return d.graph[node]
+}
+
+func (d *Day) bfs(start string) map[string]int {
+	distances := make(map[string]int)
+	queue := []string{start}
+	distances[start] = 0
+	
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		
+		for _, neighbor := range d.getNeighbors(current) {
+			if _, visited := distances[neighbor]; !visited {
+				distances[neighbor] = distances[current] + 1
+				queue = append(queue, neighbor)
+			}
+		}
+	}
+	
+	return distances
+}
+
+func (d *Day) dfs(start string, visited map[string]bool) {
+	if visited[start] {
+		return
+	}
+	visited[start] = true
+	
+	for _, neighbor := range d.getNeighbors(start) {
+		d.dfs(neighbor, visited)
+	}
+}
+
+

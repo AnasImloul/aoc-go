@@ -1,0 +1,25 @@
+package dayXX
+
+import (
+	"github.com/AnasImloul/aoc-go/pkg/registry"
+	"github.com/AnasImloul/aoc-go/pkg/solver"
+)
+
+type Day struct {
+	solver.Base
+}
+
+var Solver = &Day{
+	Base: solver.Base{
+		Year: YEAR,
+		Day:  XX,
+	},
+}
+
+func init() {
+	Solver.FirstPart = Solver.firstPart
+	Solver.SecondPart = Solver.secondPart
+	registry.Register(YEAR, XX, Solver)
+}
+
+

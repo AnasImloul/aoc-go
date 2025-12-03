@@ -1,0 +1,55 @@
+package dayXX
+
+import (
+	"github.com/AnasImloul/aoc-go/pkg/registry"
+	"github.com/AnasImloul/aoc-go/pkg/solver"
+)
+
+type Day struct {
+	solver.Base
+	state interface{}
+}
+
+var Solver = &Day{
+	Base: solver.Base{
+		Year: YEAR,
+		Day:  XX,
+	},
+}
+
+func init() {
+	Solver.FirstPart = Solver.firstPart
+	Solver.SecondPart = Solver.secondPart
+	Solver.ParseFunc = Solver.parse
+	registry.Register(YEAR, XX, Solver)
+}
+
+func (d *Day) parse(input string) error {
+	// TODO: Parse input into initial state
+	return nil
+}
+
+func (d *Day) setup() error {
+	// TODO: Initialize state
+	return nil
+}
+
+func (d *Day) step() {
+	// TODO: Perform one simulation step
+}
+
+func (d *Day) simulate(steps int) {
+	for i := 0; i < steps; i++ {
+		d.step()
+	}
+}
+
+func (d *Day) getState() interface{} {
+	return d.state
+}
+
+func (d *Day) setState(state interface{}) {
+	d.state = state
+}
+
+

@@ -1,0 +1,8 @@
+package dayXX
+
+
+func (d *Day) secondPart() any {
+    return nil
+}
+
+
