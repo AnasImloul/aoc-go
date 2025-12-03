@@ -3,7 +3,7 @@ package input
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -25,7 +25,7 @@ func Read(year, day int) string {
 	}
 
 	filename := fmt.Sprintf("data/inputs/%d/day_%02d.txt", year, day)
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		input := fetchAndSaveInput(year, day, filename)
 		return input
@@ -108,7 +108,7 @@ func fetchAndSaveInput(year, day int, filename string) string {
 	}
 
 	// Read the response body
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatalf("Failed to read response: %v", err)
 	}
@@ -130,9 +130,7 @@ func saveInputToFile(input, filename string) {
 	}
 
 	// Write the input to the file
-	if err := ioutil.WriteFile(filename, []byte(input), 0644); err != nil {
+	if err := os.WriteFile(filename, []byte(input), 0644); err != nil {
 		log.Fatalf("Failed to write file: %v", err)
 	}
 }
-
-
