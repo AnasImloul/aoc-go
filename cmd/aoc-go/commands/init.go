@@ -130,7 +130,7 @@ func normalizePart(part string) string {
 		return ""
 	}
 }
-`, moduleName)
+`)
 
 	if err := os.WriteFile(filepath.Join(projectName, "main.go"), []byte(mainGo), 0644); err != nil {
 		return fmt.Errorf("failed to create main.go: %w", err)
