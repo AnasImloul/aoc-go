@@ -17,8 +17,114 @@ import (
 //go:embed templates/*.txt
 var Templates embed.FS
 
+// transaction tracks all changes made during generation for rollback
+type transaction struct {
+	createdFiles []string
+	createdDirs  []string
+	modifiedFiles map[string][]byte // original content for rollback
+}
+
+func newTransaction() *transaction {
+	return &transaction{
+		createdFiles:  make([]string, 0),
+		createdDirs:   make([]string, 0),
+		modifiedFiles: make(map[string][]byte),
+	}
+}
+
+// rollback undoes all changes made during the transaction
+func (t *transaction) rollback() {
+	if len(t.createdFiles) > 0 || len(t.modifiedFiles) > 0 || len(t.createdDirs) > 0 {
+		fmt.Println("\nRolling back changes...")
+	}
+
+	// Remove created files
+	for _, f := range t.createdFiles {
+		if err := os.Remove(f); err == nil {
+			fmt.Printf("  Removed: %s\n", f)
+		}
+	}
+
+	// Restore modified files
+	for path, content := range t.modifiedFiles {
+		if err := os.WriteFile(path, content, 0644); err == nil {
+			fmt.Printf("  Restored: %s\n", path)
+		}
+	}
+
+	// Remove created directories (in reverse order to handle nested dirs)
+	for i := len(t.createdDirs) - 1; i >= 0; i-- {
+		if err := os.Remove(t.createdDirs[i]); err == nil {
+			fmt.Printf("  Removed directory: %s\n", t.createdDirs[i])
+		}
+	}
+}
+
+// createDir creates a directory and tracks it for potential rollback
+func (t *transaction) createDir(path string) error {
+	// Check if directory already exists
+	if _, err := os.Stat(path); err == nil {
+		return nil // Already exists, nothing to track
+	}
+
+	// Find the first non-existent parent to track
+	toCreate := []string{}
+	current := path
+	for {
+		if _, err := os.Stat(current); err == nil {
+			break
+		}
+		toCreate = append([]string{current}, toCreate...)
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+
+	if err := os.MkdirAll(path, os.ModePerm); err != nil {
+		return err
+	}
+
+	t.createdDirs = append(t.createdDirs, toCreate...)
+	return nil
+}
+
+// createFile creates a file and tracks it for potential rollback
+func (t *transaction) createFile(path string, content []byte) error {
+	// Check if file already exists
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("file already exists: %s", path)
+	}
+
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		return err
+	}
+
+	t.createdFiles = append(t.createdFiles, path)
+	return nil
+}
+
+// modifyFile modifies a file and tracks original content for rollback
+func (t *transaction) modifyFile(path string, newContent []byte) error {
+	// Read original content for rollback
+	original, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	// Only track if we haven't already
+	if _, exists := t.modifiedFiles[path]; !exists {
+		t.modifiedFiles[path] = original
+	}
+
+	return os.WriteFile(path, newContent, 0644)
+}
+
 // GenerateFiles generates the solution files for a given year and day.
 func GenerateFiles(year int, day int, pattern string, withExample bool) error {
+	tx := newTransaction()
+
 	// Format year and day
 	yearStr := strconv.Itoa(year)
 	dayStr := fmt.Sprintf("%02d", day)
@@ -26,8 +132,15 @@ func GenerateFiles(year int, day int, pattern string, withExample bool) error {
 	// Define paths
 	basePath := filepath.Join(".", "solutions", yearStr, fmt.Sprintf("day%s", dayStr))
 
-	// Create the directory structure (idempotent)
-	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
+	// Get module name from go.mod first (before making any changes)
+	moduleName, err := getModuleName()
+	if err != nil {
+		return fmt.Errorf("error reading module name: %w", err)
+	}
+
+	// Create the directory structure
+	if err := tx.createDir(basePath); err != nil {
+		tx.rollback()
 		return fmt.Errorf("error creating directory: %w", err)
 	}
 
@@ -52,12 +165,6 @@ func GenerateFiles(year int, day int, pattern string, withExample bool) error {
 		{"part2.txt", "part2.go"},
 	}
 
-	// Get module name from go.mod
-	moduleName, err := getModuleName()
-	if err != nil {
-		return fmt.Errorf("error reading module name: %w", err)
-	}
-
 	// Process each template
 	for _, file := range files {
 		outputFilePath := filepath.Join(basePath, file.OutputFile)
@@ -70,6 +177,7 @@ func GenerateFiles(year int, day int, pattern string, withExample bool) error {
 
 		templateContent, err := Templates.ReadFile("templates/" + file.TemplateFile)
 		if err != nil {
+			tx.rollback()
 			return fmt.Errorf("error reading template file %s: %w", file.TemplateFile, err)
 		}
 
@@ -81,26 +189,32 @@ func GenerateFiles(year int, day int, pattern string, withExample bool) error {
 		customizedContent = strings.ReplaceAll(customizedContent, "Day:  XX", fmt.Sprintf("Day:  %d", day))
 		customizedContent = strings.ReplaceAll(customizedContent, "XX", strconv.Itoa(day))
 
-		// Write the customized content to the output file
-		if err := os.WriteFile(outputFilePath, []byte(customizedContent), 0644); err != nil {
+		// Create the file
+		if err := tx.createFile(outputFilePath, []byte(customizedContent)); err != nil {
+			tx.rollback()
 			return fmt.Errorf("error creating file %s: %w", outputFilePath, err)
 		}
 	}
 
 	// Update the main.go file to add the blank import for the new solution
-	if err := updateMainFile(moduleName, year, day); err != nil {
+	if err := updateMainFileTransactional(tx, moduleName, year, day); err != nil {
+		tx.rollback()
 		return fmt.Errorf("error updating main file: %w", err)
 	}
 
 	// Create example files if requested
 	if withExample {
-		if err := createExampleFiles(year, day); err != nil {
-			fmt.Printf("Warning: could not create example files: %v\n", err)
+		if err := createExampleFilesTransactional(tx, year, day); err != nil {
+			tx.rollback()
+			return fmt.Errorf("error creating example files: %w", err)
 		}
 	}
 
 	// Fetch input file
-	input.Read(year, day)
+	if _, err := input.TryRead(year, day); err != nil {
+		tx.rollback()
+		return fmt.Errorf("error fetching input: %w", err)
+	}
 
 	fmt.Printf("Folder and files created successfully at %s\n", basePath)
 	return nil
@@ -121,11 +235,11 @@ func getModuleName() (string, error) {
 	return "", fmt.Errorf("module name not found in go.mod")
 }
 
-func createExampleFiles(year, day int) error {
+func createExampleFilesTransactional(tx *transaction, year, day int) error {
 	examplesPath := filepath.Join(".", "data", "examples", strconv.Itoa(year))
 
 	// Create the directory structure
-	if err := os.MkdirAll(examplesPath, os.ModePerm); err != nil {
+	if err := tx.createDir(examplesPath); err != nil {
 		return fmt.Errorf("error creating examples directory: %w", err)
 	}
 
@@ -135,7 +249,7 @@ func createExampleFiles(year, day int) error {
 	inputFile := filepath.Join(examplesPath, fmt.Sprintf("day_%s.txt", dayStr))
 	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
 		content := "# Paste example input here\n"
-		if err := os.WriteFile(inputFile, []byte(content), 0644); err != nil {
+		if err := tx.createFile(inputFile, []byte(content)); err != nil {
 			return fmt.Errorf("error creating example input file: %w", err)
 		}
 		fmt.Printf("Created example input file: %s\n", inputFile)
@@ -146,7 +260,7 @@ func createExampleFiles(year, day int) error {
 		outputFile := filepath.Join(examplesPath, fmt.Sprintf("day_%s_part%s.txt", dayStr, partNum))
 		if _, err := os.Stat(outputFile); os.IsNotExist(err) {
 			content := "# Expected output for part " + partNum + "\n"
-			if err := os.WriteFile(outputFile, []byte(content), 0644); err != nil {
+			if err := tx.createFile(outputFile, []byte(content)); err != nil {
 				return fmt.Errorf("error creating expected output file: %w", err)
 			}
 			fmt.Printf("Created expected output file: %s\n", outputFile)
@@ -156,7 +270,7 @@ func createExampleFiles(year, day int) error {
 	return nil
 }
 
-func updateMainFile(moduleName string, year, day int) error {
+func updateMainFileTransactional(tx *transaction, moduleName string, year, day int) error {
 	dayStr := fmt.Sprintf("%02d", day)
 	mainFilePath := "main.go"
 
@@ -214,13 +328,11 @@ func updateMainFile(moduleName string, year, day int) error {
 	contentStr = contentStr[:importBlockEnd] + "\t" + importStatement + "\n" + contentStr[importBlockEnd:]
 	fmt.Printf("Added import for %d/day%s\n", year, dayStr)
 
-	// Write the updated content back to the file
-	if err := os.WriteFile(mainFilePath, []byte(contentStr), 0644); err != nil {
+	// Write the updated content using transaction
+	if err := tx.modifyFile(mainFilePath, []byte(contentStr)); err != nil {
 		return fmt.Errorf("error writing main file: %w", err)
 	}
 
 	fmt.Printf("Updated main.go file\n")
 	return nil
 }
-
-

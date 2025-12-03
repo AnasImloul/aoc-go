@@ -52,6 +52,15 @@ var TestCmd = &cobra.Command{
 func runProjectTests(year, day int, parts []string) {
 	fmt.Printf("Testing Year %d Day %d\n\n", year, day)
 
+	// Build the project
+	if err := buildProject(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v", err)
+		os.Exit(1)
+	}
+
+	// Clean up binary after we're done
+	defer os.Remove(binaryName)
+
 	allPassed := true
 	for _, p := range parts {
 		// Convert part to numeric
@@ -62,8 +71,8 @@ func runProjectTests(year, day int, parts []string) {
 
 		start := time.Now()
 
-		// Run the project's main.go with test flag
-		cmd := exec.Command("go", "run", ".", "-test", strconv.Itoa(year), strconv.Itoa(day), partNum)
+		// Run the compiled binary with test flag
+		cmd := exec.Command("./"+binaryName, "-test", strconv.Itoa(year), strconv.Itoa(day), partNum)
 		cmd.Dir, _ = os.Getwd()
 
 		var stdout, stderr bytes.Buffer
@@ -142,16 +151,15 @@ func runTestFallback(year, day int, p string) (*testResult, error) {
 	}
 
 	// Parse example file - expect format with separator
-	parts := strings.SplitN(string(content), "\n---\n", 2)
-	if len(parts) != 2 {
+	fileParts := strings.SplitN(string(content), "\n---\n", 2)
+	if len(fileParts) != 2 {
 		return nil, fmt.Errorf("example file missing expected output (use --- separator)")
 	}
 
-	expected := strings.TrimSpace(parts[1])
+	expected := strings.TrimSpace(fileParts[1])
 
-	// Run solution with example input
-	// For now, just run normally and compare
-	cmd := exec.Command("go", "run", "main.go", strconv.Itoa(year), strconv.Itoa(day), partNum)
+	// Run solution with example input using the cached binary
+	cmd := exec.Command("./"+binaryName, strconv.Itoa(year), strconv.Itoa(day), partNum)
 	cmd.Dir, _ = os.Getwd()
 
 	// Set environment variable to use example input
@@ -164,7 +172,7 @@ func runTestFallback(year, day int, p string) (*testResult, error) {
 		return nil, fmt.Errorf("failed to run solution: %v", err)
 	}
 
-	actual := parseAnswer(stdout.String())
+	actual, _ := parseOutput(stdout.String())
 
 	return &testResult{
 		passed:   actual == expected,

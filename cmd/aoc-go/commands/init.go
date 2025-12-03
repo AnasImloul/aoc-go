@@ -79,6 +79,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/AnasImloul/aoc-go/pkg/runner"
 
@@ -111,13 +112,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Time only the solution execution
+	start := time.Now()
 	result := runner.Solution(year, day, part)
+	elapsed := time.Since(start)
+
 	if result == nil {
 		fmt.Printf("No solution found for year %%d day %%d\n", year, day)
 		os.Exit(1)
 	}
 
 	fmt.Printf("Answer: %%v\n", result)
+	fmt.Printf("Time: %%d\n", elapsed.Microseconds())
 }
 
 func normalizePart(part string) string {
