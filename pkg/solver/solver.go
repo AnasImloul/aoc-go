@@ -1,6 +1,32 @@
+// Package solver provides the interface and base implementation for Advent of Code solutions.
+//
+// # Usage
+//
+// Solutions embed the Base struct and implement FirstPart and SecondPart functions:
+//
+//	type Day struct {
+//	    solver.Base
+//	    // parsed data fields
+//	}
+//
+//	func init() {
+//	    s := &Day{Base: solver.Base{Year: 2024, Day: 1}}
+//	    s.FirstPart = s.firstPart
+//	    s.SecondPart = s.secondPart
+//	    s.ParseFunc = s.parse
+//	    registry.Register(2024, 1, s)
+//	}
+//
+// # Thread Safety
+//
+// Solver instances are not thread-safe. Each Solve() call may modify the solver's
+// internal state (via ParseFunc). For concurrent execution of multiple parts,
+// create separate solver instances.
 package solver
 
 import (
+	"fmt"
+
 	"github.com/AnasImloul/aoc-go/pkg/input"
 )
 
@@ -27,12 +53,13 @@ type Base struct {
 }
 
 // Solve handles executing the correct part logic.
+// Panics if the part is not implemented or if parsing fails.
 func (b Base) Solve(part string) any {
 	// Parse input if ParseFunc is defined
 	if b.ParseFunc != nil {
 		inputData := b.ReadInput()
 		if err := b.ParseFunc(inputData); err != nil {
-			panic("Failed to parse input: " + err.Error())
+			panic(fmt.Sprintf("failed to parse input for year %d day %d: %v", b.Year, b.Day, err))
 		}
 	}
 
@@ -40,17 +67,15 @@ func (b Base) Solve(part string) any {
 	case "first":
 		if b.FirstPart != nil {
 			return b.FirstPart()
-		} else {
-			panic("First part not implemented")
 		}
+		panic(fmt.Sprintf("first part not implemented for year %d day %d", b.Year, b.Day))
 	case "second":
 		if b.SecondPart != nil {
 			return b.SecondPart()
-		} else {
-			panic("Second part not implemented")
 		}
+		panic(fmt.Sprintf("second part not implemented for year %d day %d", b.Year, b.Day))
 	default:
-		panic("Invalid part ('first', 'second')")
+		panic(fmt.Sprintf("invalid part %q: must be 'first' or 'second'", part))
 	}
 }
 
@@ -63,5 +88,3 @@ func (b Base) ReadInput() string {
 func (b Base) ReadLines() <-chan string {
 	return input.ReadLines(b.Year, b.Day)
 }
-
-

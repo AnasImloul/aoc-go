@@ -1,9 +1,22 @@
+// Package registry provides a global registry for Advent of Code solvers.
+//
+// # Thread Safety
+//
+// The registry is designed for single-threaded CLI usage. Registration typically
+// happens during init() before main() runs, and lookups happen during solution
+// execution. Concurrent registration and lookup from multiple goroutines is not
+// safe and may cause data races.
+//
+// For concurrent usage, wrap access with appropriate synchronization or use
+// a separate registry instance per goroutine.
 package registry
 
 import (
 	"github.com/AnasImloul/aoc-go/pkg/solver"
 )
 
+// solvers stores registered solvers indexed by year and day.
+// Note: This map is not thread-safe. See package documentation.
 var solvers = make(map[int]map[int]solver.Solver)
 
 // Register adds a solver to the registry for the given year and day.
@@ -44,5 +57,3 @@ func GetDays(year int) []int {
 	}
 	return nil
 }
-
-

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/AnasImloul/aoc-go/internal/part"
 	"github.com/AnasImloul/aoc-go/pkg/runner"
 	"github.com/spf13/cobra"
 )
@@ -24,8 +25,8 @@ var RunCmd = &cobra.Command{
 		if err != nil {
 			log.Fatalf("Invalid day: %v", err)
 		}
-		part := normalizePart(args[2])
-		if part == "" {
+		p := part.Normalize(args[2])
+		if p == "" {
 			log.Fatalf("Invalid part: %s (must be '1', '2', 'first', or 'second')", args[2])
 		}
 
@@ -33,7 +34,7 @@ var RunCmd = &cobra.Command{
 		start := time.Now()
 
 		// Execute solution
-		result := runner.Solution(year, day, part)
+		result := runner.Solution(year, day, p)
 
 		// End timer
 		elapsed := time.Since(start)
@@ -56,17 +57,3 @@ func formatExecutionTime(micros int64) string {
 		return fmt.Sprintf("%.2f s", float64(micros)/1000000.0)
 	}
 }
-
-// normalizePart converts part aliases to the canonical form
-func normalizePart(part string) string {
-	switch part {
-	case "1", "first":
-		return "first"
-	case "2", "second":
-		return "second"
-	default:
-		return ""
-	}
-}
-
-

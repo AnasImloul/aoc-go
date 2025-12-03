@@ -12,16 +12,27 @@ type Numerical interface {
 }
 
 // ToIntSlice converts a string with a separator to a slice of integers.
+// Panics on parse error - use TryToIntSlice for error handling.
 func ToIntSlice(line string, sep string) []int {
+	nums, err := TryToIntSlice(line, sep)
+	if err != nil {
+		panic(err)
+	}
+	return nums
+}
+
+// TryToIntSlice converts a string with a separator to a slice of integers.
+// Returns an error if any element cannot be parsed as an integer.
+func TryToIntSlice(line string, sep string) ([]int, error) {
 	var nums []int
 	for _, sNum := range strings.Split(line, sep) {
 		num, err := strconv.Atoi(sNum)
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("failed to parse %q as integer: %w", sNum, err)
 		}
 		nums = append(nums, num)
 	}
-	return nums
+	return nums, nil
 }
 
 // ReverseString reverses a string.
@@ -157,10 +168,11 @@ func Abs(x int) int {
 }
 
 // ParseInt parses a string to an integer, panicking on error.
+// Use strconv.Atoi directly for error handling.
 func ParseInt(s string) int {
 	num, err := strconv.Atoi(s)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse int: %v", err))
+		panic(fmt.Sprintf("failed to parse int %q: %v", s, err))
 	}
 	return num
 }
@@ -181,5 +193,3 @@ func Must[T any](t T, err error) T {
 	}
 	return t
 }
-
-
