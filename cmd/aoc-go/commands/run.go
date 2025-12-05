@@ -52,11 +52,6 @@ func init() {
 	RunCmd.Flags().BoolP("save-stats", "s", true, "Save statistics to stats.json")
 }
 
-type resultData struct {
-	Answer     string `json:"answer"`
-	TimeMicros int64  `json:"time_micros"`
-}
-
 func runProjectSolution(year, day int, p string) error {
 	// Convert part to numeric for the project's main.go
 	partNum := "1"
