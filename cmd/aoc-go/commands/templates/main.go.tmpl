@@ -1,0 +1,89 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+	"time"
+
+	"github.com/AnasImloul/aoc-go/pkg/runner"
+
+	// Import your solutions here - they register themselves via init()
+	// Solutions are automatically added when you run: aoc-go generate <year> <day>
+)
+
+func main() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: go run main.go <year> <day> <part>")
+		fmt.Println("Example: go run main.go 2024 1 1")
+		os.Exit(1)
+	}
+
+	year, err := strconv.Atoi(os.Args[1])
+	if err != nil {
+		fmt.Printf("Invalid year: %v\n", err)
+		os.Exit(1)
+	}
+
+	day, err := strconv.Atoi(os.Args[2])
+	if err != nil {
+		fmt.Printf("Invalid day: %v\n", err)
+		os.Exit(1)
+	}
+
+	part := normalizePart(os.Args[3])
+	if part == "" {
+		fmt.Printf("Invalid part: %s (must be '1', '2', 'first', or 'second')\n", os.Args[3])
+		os.Exit(1)
+	}
+
+	// Time only the solution execution
+	start := time.Now()
+	result := runner.Solution(year, day, part)
+	elapsed := time.Since(start)
+
+	if result == nil {
+		fmt.Fprintf(os.Stderr, "No solution found for year %d day %d\n", year, day)
+		os.Exit(1)
+	}
+
+	// Check if result file path is provided (when run by aoc-go)
+	resultFile := os.Getenv("AOC_RESULT_FILE")
+	if resultFile != "" {
+		// Convert result to string to preserve exact formatting
+		answerStr := fmt.Sprintf("%v", result)
+		// Write structured output to result file
+		resultData := map[string]interface{}{
+			"answer":      answerStr,
+			"time_micros": elapsed.Microseconds(),
+		}
+		jsonData, err := json.Marshal(resultData)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to marshal result: %v\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(resultFile, jsonData, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to write result file: %v\n", err)
+			os.Exit(1)
+		}
+		// Don't print to stdout when run by aoc-go - it will handle the display
+		return
+	}
+
+	// Print to stdout for backward compatibility when run directly
+	fmt.Printf("Answer: %v\n", result)
+	fmt.Printf("Time: %d\n", elapsed.Microseconds())
+}
+
+func normalizePart(part string) string {
+	switch part {
+	case "1", "first":
+		return "first"
+	case "2", "second":
+		return "second"
+	default:
+		return ""
+	}
+}
+

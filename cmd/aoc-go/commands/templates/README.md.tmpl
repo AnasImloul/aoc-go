@@ -1,0 +1,64 @@
+# {{.ProjectName}}
+
+My Advent of Code solutions in Go, powered by [aoc-go](https://github.com/AnasImloul/aoc-go).
+
+## Setup
+
+1. Install the aoc-go CLI:
+   ```bash
+   brew install AnasImloul/tap/aoc-go
+   ```
+
+2. Get your session cookie from [adventofcode.com](https://adventofcode.com):
+   - Log in to Advent of Code
+   - Open browser developer tools (F12)
+   - Go to Application/Storage > Cookies
+   - Copy the value of the 'session' cookie
+
+3. Add your session cookie to `.env`:
+   ```bash
+   SESSION_COOKIE=your_session_cookie_here
+   ```
+
+## Usage
+
+### Generate a new day
+```bash
+aoc-go generate <year> <day>
+# Example: aoc-go generate 2024 1
+```
+
+### Run a solution
+```bash
+go run main.go <year> <day> <part>
+# Example: go run main.go 2024 1 1
+```
+
+Or use the CLI directly:
+```bash
+aoc-go run <year> <day> <part>
+```
+
+### Test against examples
+```bash
+aoc-go test <year> <day>
+```
+
+## Project Structure
+
+```
+{{.ProjectName}}/
+├── main.go           # Entry point
+├── solutions/        # Your solutions
+│   └── 2024/
+│       └── day01/
+│           ├── solution.go
+│           ├── part1.go
+│           └── part2.go
+├── data/
+│   ├── inputs/      # Puzzle inputs (auto-downloaded)
+│   └── examples/    # Example inputs for testing
+├── .env             # Session cookie (gitignored)
+└── go.mod
+```
+

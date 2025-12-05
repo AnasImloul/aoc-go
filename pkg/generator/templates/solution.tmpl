@@ -1,4 +1,4 @@
-package dayXX
+package {{.DayPackage}}
 
 import (
 	"github.com/AnasImloul/aoc-go/pkg/registry"
@@ -11,15 +11,13 @@ type Day struct {
 
 var Solver = &Day{
 	Base: solver.Base{
-		Year: YEAR,
-		Day:  XX,
+		Year: {{.Year}},
+		Day:  {{.Day}},
 	},
 }
 
 func init() {
 	Solver.FirstPart = Solver.firstPart
 	Solver.SecondPart = Solver.secondPart
-	registry.Register(YEAR, XX, Solver)
+	registry.Register({{.Year}}, {{.Day}}, Solver)
 }
-
-

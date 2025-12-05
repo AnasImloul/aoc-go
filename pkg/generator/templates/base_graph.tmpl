@@ -1,4 +1,4 @@
-package dayXX
+package {{.DayPackage}}
 
 import (
 	"github.com/AnasImloul/aoc-go/pkg/registry"
@@ -13,8 +13,8 @@ type Day struct {
 
 var Solver = &Day{
 	Base: solver.Base{
-		Year: YEAR,
-		Day:  XX,
+		Year: {{.Year}},
+		Day:  {{.Day}},
 	},
 }
 
@@ -22,7 +22,7 @@ func init() {
 	Solver.FirstPart = Solver.firstPart
 	Solver.SecondPart = Solver.secondPart
 	Solver.ParseFunc = Solver.parse
-	registry.Register(YEAR, XX, Solver)
+	registry.Register({{.Year}}, {{.Day}}, Solver)
 }
 
 func (d *Day) parse(input string) error {
@@ -72,5 +72,3 @@ func (d *Day) dfs(start string, visited map[string]bool) {
 		d.dfs(neighbor, visited)
 	}
 }
-
-

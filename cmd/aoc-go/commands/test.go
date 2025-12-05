@@ -1,14 +1,14 @@
 package commands
 
 import (
-	"bytes"
+	_ "encoding/json" // Used by readResultFile in run.go
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/AnasImloul/aoc-go/internal/part"
 	"github.com/spf13/cobra"
@@ -63,52 +63,21 @@ func runProjectTests(year, day int, parts []string) {
 
 	allPassed := true
 	for _, p := range parts {
-		// Convert part to numeric
-		partNum := "1"
-		if p == "second" {
-			partNum = "2"
-		}
-
-		start := time.Now()
-
-		// Run the compiled binary with test flag
-		cmd := exec.Command("./"+binaryName, "-test", strconv.Itoa(year), strconv.Itoa(day), partNum)
-		cmd.Dir, _ = os.Getwd()
-
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		err := cmd.Run()
-		elapsed := time.Since(start)
-
-		if err != nil {
-			// Try running without -test flag (fallback for projects without test support)
-			result, testErr := runTestFallback(year, day, p)
-			if testErr != nil {
-				fmt.Printf("  Part %s: [SKIP] %v\n", part.Label(p), testErr)
-				continue
-			}
-			if result.passed {
-				fmt.Printf("  Part %s: [PASS] got %v [%s]\n", part.Label(p), result.actual, formatExecutionTime(elapsed.Microseconds()))
-			} else {
-				fmt.Printf("  Part %s: [FAIL]\n", part.Label(p))
-				fmt.Printf("           Expected: %v\n", result.expected)
-				fmt.Printf("           Got:      %v\n", result.actual)
-				allPassed = false
-			}
+		// Try running with test flag first (if project supports it)
+		// Otherwise fallback to manual testing
+		result, testErr := runTestFallback(year, day, p)
+		if testErr != nil {
+			fmt.Printf("  Part %s: [SKIP] %v\n", part.Label(p), testErr)
 			continue
 		}
 
-		// Parse test output
-		output := strings.TrimSpace(stdout.String())
-		if strings.Contains(output, "[PASS]") {
-			fmt.Printf("  Part %s: [PASS] [%s]\n", part.Label(p), formatExecutionTime(elapsed.Microseconds()))
-		} else if strings.Contains(output, "[FAIL]") {
-			fmt.Printf("  Part %s: %s\n", part.Label(p), output)
-			allPassed = false
+		if result.passed {
+			fmt.Printf("  Part %s: [PASS] got %v [%s]\n", part.Label(p), result.actual, formatExecutionTime(result.timeMicros))
 		} else {
-			fmt.Printf("  Part %s: %s\n", part.Label(p), output)
+			fmt.Printf("  Part %s: [FAIL]\n", part.Label(p))
+			fmt.Printf("           Expected: %v\n", result.expected)
+			fmt.Printf("           Got:      %v\n", result.actual)
+			allPassed = false
 		}
 	}
 
@@ -121,62 +90,85 @@ func runProjectTests(year, day int, parts []string) {
 }
 
 type testResult struct {
-	passed   bool
-	expected string
-	actual   string
+	passed     bool
+	expected   string
+	actual     string
+	timeMicros int64
 }
 
 func runTestFallback(year, day int, p string) (*testResult, error) {
 	// Read example input and expected output
 	dayStr := fmt.Sprintf("%02d", day)
+	dayFolderName := fmt.Sprintf("day%s", dayStr)
 	partNum := "1"
 	if p == "second" {
 		partNum = "2"
 	}
 
-	// Try to find example file
-	examplePath := fmt.Sprintf("data/examples/%d/day_%s_part%s.txt", year, dayStr, partNum)
-	if _, err := os.Stat(examplePath); os.IsNotExist(err) {
-		// Try shared example file
-		examplePath = fmt.Sprintf("data/examples/%d/day_%s.txt", year, dayStr)
-		if _, err := os.Stat(examplePath); os.IsNotExist(err) {
-			return nil, fmt.Errorf("no example file found")
-		}
-	}
+	var exampleInput string
+	var expected string
 
-	// Read expected output (first line after "---" separator or specific format)
-	content, err := os.ReadFile(examplePath)
+	// Use new folder structure: data/examples/2025/day01/input.txt and part1.txt
+	dayFolderPath := fmt.Sprintf("data/examples/%d/%s", year, dayFolderName)
+	inputFile := filepath.Join(dayFolderPath, "input.txt")
+	partFile := filepath.Join(dayFolderPath, fmt.Sprintf("part%s.txt", partNum))
+
+	inputContent, err := os.ReadFile(inputFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read example file: %v", err)
+		return nil, fmt.Errorf("example input file not found: %s", inputFile)
+	}
+	exampleInput = strings.TrimSpace(string(inputContent))
+
+	partContent, err := os.ReadFile(partFile)
+	if err != nil {
+		return nil, fmt.Errorf("expected output file not found: %s", partFile)
+	}
+	expected = strings.TrimSpace(string(partContent))
+
+	if exampleInput == "" {
+		return nil, fmt.Errorf("no example input found")
+	}
+	if expected == "" {
+		return nil, fmt.Errorf("no expected output found")
 	}
 
-	// Parse example file - expect format with separator
-	fileParts := strings.SplitN(string(content), "\n---\n", 2)
-	if len(fileParts) != 2 {
-		return nil, fmt.Errorf("example file missing expected output (use --- separator)")
+	// Create temporary result file
+	resultFile, err := os.CreateTemp("", "aoc-result-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create result file: %v", err)
 	}
-
-	expected := strings.TrimSpace(fileParts[1])
+	resultFilePath := resultFile.Name()
+	resultFile.Close()
+	defer os.Remove(resultFilePath)
 
 	// Run solution with example input using the cached binary
 	cmd := exec.Command("./"+binaryName, strconv.Itoa(year), strconv.Itoa(day), partNum)
 	cmd.Dir, _ = os.Getwd()
 
-	// Set environment variable to use example input
-	cmd.Env = append(os.Environ(), "AOC_USE_EXAMPLE=1")
+	// Set environment variables
+	cmd.Env = append(os.Environ(), "AOC_TEST_INPUT="+exampleInput, "AOC_RESULT_FILE="+resultFilePath)
 
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
+	// Write stdout/stderr directly to terminal for user logs
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("failed to run solution: %v", err)
 	}
 
-	actual, _ := parseOutput(stdout.String())
+	// Read result from file
+	resultData, err := readResultFile(resultFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read result file: %v", err)
+	}
+
+	// Answer is already a string
+	actual := resultData.Answer
 
 	return &testResult{
-		passed:   actual == expected,
-		expected: expected,
-		actual:   actual,
+		passed:     actual == expected,
+		expected:   expected,
+		actual:     actual,
+		timeMicros: resultData.TimeMicros,
 	}, nil
 }

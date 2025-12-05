@@ -1,4 +1,4 @@
-package dayXX
+package {{.DayPackage}}
 
 import (
 	"strings"
@@ -15,8 +15,8 @@ type Day struct {
 
 var Solver = &Day{
 	Base: solver.Base{
-		Year: YEAR,
-		Day:  XX,
+		Year: {{.Year}},
+		Day:  {{.Day}},
 	},
 }
 
@@ -24,7 +24,7 @@ func init() {
 	Solver.FirstPart = Solver.firstPart
 	Solver.SecondPart = Solver.secondPart
 	Solver.ParseFunc = Solver.parse
-	registry.Register(YEAR, XX, Solver)
+	registry.Register({{.Year}}, {{.Day}}, Solver)
 }
 
 func (d *Day) parse(input string) error {
@@ -40,5 +40,3 @@ func (d *Day) parseToken(token string) interface{} {
 	// TODO: Implement token parsing logic
 	return nil
 }
-
-

@@ -2,12 +2,12 @@ package commands
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 
 	"github.com/AnasImloul/aoc-go/internal/part"
 	"github.com/spf13/cobra"
@@ -61,6 +61,11 @@ func buildProject() error {
 	return nil
 }
 
+type resultData struct {
+	Answer     string `json:"answer"`
+	TimeMicros int64  `json:"time_micros"`
+}
+
 func runProjectSolution(year, day int, p string) {
 	// Convert part to numeric for the project's main.go
 	partNum := "1"
@@ -77,62 +82,64 @@ func runProjectSolution(year, day int, p string) {
 	// Clean up binary after we're done
 	defer os.Remove(binaryName)
 
+	// Create temporary result file
+	resultFile, err := os.CreateTemp("", "aoc-result-*.json")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create result file: %v\n", err)
+		os.Exit(1)
+	}
+	resultFilePath := resultFile.Name()
+	resultFile.Close()
+	defer os.Remove(resultFilePath)
+
 	// Run the compiled binary
 	cmd := exec.Command("./"+binaryName, strconv.Itoa(year), strconv.Itoa(day), partNum)
 	cmd.Dir, _ = os.Getwd()
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Pass result file path via environment variable
+	cmd.Env = append(os.Environ(), "AOC_RESULT_FILE="+resultFilePath)
 
-	err := cmd.Run()
+	// Write stdout/stderr directly to terminal for user logs
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	// Check if it's a "no solution found" message
-	stdoutStr := stdout.String()
-	stderrStr := stderr.String()
+	err = cmd.Run()
 
-	if strings.Contains(stdoutStr, "No solution found") {
-		fmt.Printf("\nNo solution registered for year %d day %d part %s\n", year, day, p)
-		fmt.Println("Make sure the solution is imported in main.go")
-		os.Exit(1)
-	}
-
+	// Check if execution failed
 	if err != nil {
-		// Show any error output
-		if stderrStr != "" {
-			fmt.Fprintf(os.Stderr, "%s", stderrStr)
-		}
-		if stdoutStr != "" {
-			fmt.Print(stdoutStr)
-		}
+		// Check if it's a "no solution found" message by reading stderr
+		// (we can't capture it separately now, but main.go should exit with code 1)
 		os.Exit(1)
 	}
 
-	// Parse the output to extract answer and timing
-	answer, micros := parseOutput(stdoutStr)
+	// Read result from file
+	resultData, err := readResultFile(resultFilePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read result file: %v\n", err)
+		os.Exit(1)
+	}
 
-	fmt.Printf("\nAnswer: %v\n", answer)
-	fmt.Printf("Time:   %s\n\n", formatExecutionTime(micros))
+	// Display answer and timing
+	if resultData.Answer != "" {
+		fmt.Printf("\nAnswer: %s\n", resultData.Answer)
+		fmt.Printf("Time:   %s\n\n", formatExecutionTime(resultData.TimeMicros))
+	}
 }
 
-func parseOutput(output string) (answer string, micros int64) {
-	// The project's main.go outputs:
-	// Answer: <value>
-	// Time: <microseconds>
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "Answer: ") {
-			answer = strings.TrimPrefix(line, "Answer: ")
-		} else if strings.HasPrefix(line, "Time: ") {
-			timeStr := strings.TrimPrefix(line, "Time: ")
-			micros, _ = strconv.ParseInt(timeStr, 10, 64)
-		}
+func readResultFile(filePath string) (*resultData, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
 	}
-	if answer == "" {
-		answer = strings.TrimSpace(output)
+
+	var result resultData
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse result JSON: %w", err)
 	}
-	return answer, micros
+
+	return &result, nil
 }
+
 
 func formatExecutionTime(micros int64) string {
 	if micros < 1000 {

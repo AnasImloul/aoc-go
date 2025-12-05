@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"os"
@@ -8,13 +9,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/AnasImloul/aoc-go/pkg/input"
 )
 
 // Templates holds embedded template files
 //
-//go:embed templates/*.txt
+//go:embed templates/*.tmpl
 var Templates embed.FS
 
 // transaction tracks all changes made during generation for rollback
@@ -145,13 +147,13 @@ func GenerateFiles(year int, day int, pattern string, withExample bool) error {
 	}
 
 	// Determine the solution template to use based on pattern
-	solutionTemplate := "solution.txt"
+	solutionTemplate := "solution.tmpl"
 	if pattern != "" {
-		patternTemplate := fmt.Sprintf("base_%s.txt", pattern)
+		patternTemplate := fmt.Sprintf("base_%s.tmpl", pattern)
 		if _, err := Templates.ReadFile("templates/" + patternTemplate); err == nil {
 			solutionTemplate = patternTemplate
 		} else {
-			fmt.Printf("Pattern template %s not found, using default solution.txt\n", patternTemplate)
+			fmt.Printf("Pattern template %s not found, using default solution.tmpl\n", patternTemplate)
 		}
 	}
 
@@ -161,8 +163,8 @@ func GenerateFiles(year int, day int, pattern string, withExample bool) error {
 		OutputFile   string
 	}{
 		{solutionTemplate, "solution.go"},
-		{"part1.txt", "part1.go"},
-		{"part2.txt", "part2.go"},
+		{"part1.tmpl", "part1.go"},
+		{"part2.tmpl", "part2.go"},
 	}
 
 	// Process each template
@@ -181,16 +183,39 @@ func GenerateFiles(year int, day int, pattern string, withExample bool) error {
 			return fmt.Errorf("error reading template file %s: %w", file.TemplateFile, err)
 		}
 
-		// Replace placeholders in the template
-		customizedContent := strings.ReplaceAll(string(templateContent), "MODULE_NAME", moduleName)
-		customizedContent = strings.ReplaceAll(customizedContent, "YEAR", yearStr)
-		customizedContent = strings.ReplaceAll(customizedContent, "day_XX", fmt.Sprintf("day%s", dayStr))
-		customizedContent = strings.ReplaceAll(customizedContent, "dayXX", fmt.Sprintf("day%s", dayStr))
-		customizedContent = strings.ReplaceAll(customizedContent, "Day:  XX", fmt.Sprintf("Day:  %d", day))
-		customizedContent = strings.ReplaceAll(customizedContent, "XX", strconv.Itoa(day))
+		// Parse template
+		tmpl, err := template.New(file.TemplateFile).Parse(string(templateContent))
+		if err != nil {
+			tx.rollback()
+			return fmt.Errorf("error parsing template %s: %w", file.TemplateFile, err)
+		}
+
+		// Prepare template data
+		templateData := struct {
+			ModuleName string
+			Year       int
+			Day        int
+			YearStr    string
+			DayStr     string
+			DayPackage string
+		}{
+			ModuleName: moduleName,
+			Year:       year,
+			Day:        day,
+			YearStr:    yearStr,
+			DayStr:     dayStr,
+			DayPackage: fmt.Sprintf("day%s", dayStr),
+		}
+
+		// Execute template
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, templateData); err != nil {
+			tx.rollback()
+			return fmt.Errorf("error executing template %s: %w", file.TemplateFile, err)
+		}
 
 		// Create the file
-		if err := tx.createFile(outputFilePath, []byte(customizedContent)); err != nil {
+		if err := tx.createFile(outputFilePath, buf.Bytes()); err != nil {
 			tx.rollback()
 			return fmt.Errorf("error creating file %s: %w", outputFilePath, err)
 		}
@@ -236,17 +261,19 @@ func getModuleName() (string, error) {
 }
 
 func createExampleFilesTransactional(tx *transaction, year, day int) error {
-	examplesPath := filepath.Join(".", "data", "examples", strconv.Itoa(year))
+	dayStr := fmt.Sprintf("%02d", day)
+	dayFolderName := fmt.Sprintf("day%s", dayStr)
+	
+	// Create the day-specific folder: data/examples/2025/day01/
+	examplesPath := filepath.Join(".", "data", "examples", strconv.Itoa(year), dayFolderName)
 
 	// Create the directory structure
 	if err := tx.createDir(examplesPath); err != nil {
 		return fmt.Errorf("error creating examples directory: %w", err)
 	}
 
-	dayStr := fmt.Sprintf("%02d", day)
-
-	// Create example input file
-	inputFile := filepath.Join(examplesPath, fmt.Sprintf("day_%s.txt", dayStr))
+	// Create example input file: data/examples/2025/day01/input.txt
+	inputFile := filepath.Join(examplesPath, "input.txt")
 	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
 		content := "# Paste example input here\n"
 		if err := tx.createFile(inputFile, []byte(content)); err != nil {
@@ -255,9 +282,9 @@ func createExampleFilesTransactional(tx *transaction, year, day int) error {
 		fmt.Printf("Created example input file: %s\n", inputFile)
 	}
 
-	// Create expected output files for part 1 and part 2
+	// Create expected output files for part 1 and part 2: data/examples/2025/day01/part1.txt, part2.txt
 	for _, partNum := range []string{"1", "2"} {
-		outputFile := filepath.Join(examplesPath, fmt.Sprintf("day_%s_part%s.txt", dayStr, partNum))
+		outputFile := filepath.Join(examplesPath, fmt.Sprintf("part%s.txt", partNum))
 		if _, err := os.Stat(outputFile); os.IsNotExist(err) {
 			content := "# Expected output for part " + partNum + "\n"
 			if err := tx.createFile(outputFile, []byte(content)); err != nil {
