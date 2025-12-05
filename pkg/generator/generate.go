@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/AnasImloul/aoc-go/internal/constants"
 	"github.com/AnasImloul/aoc-go/pkg/input"
 )
 
@@ -34,29 +35,38 @@ func newTransaction() *transaction {
 	}
 }
 
-// rollback undoes all changes made during the transaction
+// rollback undoes all changes made during the transaction.
+// Errors during rollback are logged but do not prevent cleanup from continuing.
 func (t *transaction) rollback() {
-	if len(t.createdFiles) > 0 || len(t.modifiedFiles) > 0 || len(t.createdDirs) > 0 {
-		fmt.Println("\nRolling back changes...")
+	if len(t.createdFiles) == 0 && len(t.modifiedFiles) == 0 && len(t.createdDirs) == 0 {
+		return
 	}
+
+	fmt.Println("\nRolling back changes...")
 
 	// Remove created files
 	for _, f := range t.createdFiles {
-		if err := os.Remove(f); err == nil {
+		if err := os.Remove(f); err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: failed to remove %s: %v\n", f, err)
+		} else {
 			fmt.Printf("  Removed: %s\n", f)
 		}
 	}
 
 	// Restore modified files
 	for path, content := range t.modifiedFiles {
-		if err := os.WriteFile(path, content, 0644); err == nil {
+		if err := os.WriteFile(path, content, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: failed to restore %s: %v\n", path, err)
+		} else {
 			fmt.Printf("  Restored: %s\n", path)
 		}
 	}
 
 	// Remove created directories (in reverse order to handle nested dirs)
 	for i := len(t.createdDirs) - 1; i >= 0; i-- {
-		if err := os.Remove(t.createdDirs[i]); err == nil {
+		if err := os.Remove(t.createdDirs[i]); err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: failed to remove directory %s: %v\n", t.createdDirs[i], err)
+		} else {
 			fmt.Printf("  Removed directory: %s\n", t.createdDirs[i])
 		}
 	}
@@ -126,38 +136,71 @@ func (t *transaction) modifyFile(path string, newContent []byte) error {
 // GenerateFiles generates the solution files for a given year and day.
 func GenerateFiles(year int, day int, pattern string, withExample bool) error {
 	tx := newTransaction()
+	defer func() {
+		// Only rollback if there was an error (tx will track if commit needed)
+		if r := recover(); r != nil {
+			tx.rollback()
+			panic(r)
+		}
+	}()
 
-	// Format year and day
 	yearStr := strconv.Itoa(year)
 	dayStr := fmt.Sprintf("%02d", day)
+	basePath := filepath.Join(".", constants.SolutionsDir, yearStr, fmt.Sprintf(constants.DayFolderName, dayStr))
 
-	// Define paths
-	basePath := filepath.Join(".", "solutions", yearStr, fmt.Sprintf("day%s", dayStr))
-
-	// Get module name from go.mod first (before making any changes)
 	moduleName, err := getModuleName()
 	if err != nil {
+		tx.rollback()
 		return fmt.Errorf("error reading module name: %w", err)
 	}
 
-	// Create the directory structure
 	if err := tx.createDir(basePath); err != nil {
 		tx.rollback()
 		return fmt.Errorf("error creating directory: %w", err)
 	}
 
-	// Determine the solution template to use based on pattern
-	solutionTemplate := "solution.tmpl"
-	if pattern != "" {
-		patternTemplate := fmt.Sprintf("base_%s.tmpl", pattern)
-		if _, err := Templates.ReadFile("templates/" + patternTemplate); err == nil {
-			solutionTemplate = patternTemplate
-		} else {
-			fmt.Printf("Pattern template %s not found, using default solution.tmpl\n", patternTemplate)
+	solutionTemplate := determineSolutionTemplate(pattern)
+	if err := generateSolutionFiles(tx, basePath, solutionTemplate, moduleName, year, day, yearStr, dayStr); err != nil {
+		tx.rollback()
+		return err
+	}
+
+	if err := updateMainFileTransactional(tx, moduleName, year, day); err != nil {
+		tx.rollback()
+		return fmt.Errorf("error updating main file: %w", err)
+	}
+
+	if withExample {
+		if err := createExampleFilesTransactional(tx, year, day); err != nil {
+			tx.rollback()
+			return fmt.Errorf("error creating example files: %w", err)
 		}
 	}
 
-	// List of template files and corresponding output files
+	if _, err := input.TryRead(year, day); err != nil {
+		tx.rollback()
+		return fmt.Errorf("error fetching input: %w", err)
+	}
+
+	fmt.Printf("Folder and files created successfully at %s\n", basePath)
+	return nil
+}
+
+func determineSolutionTemplate(pattern string) string {
+	if pattern == "" {
+		return "solution.tmpl"
+	}
+
+	patternTemplate := fmt.Sprintf("base_%s.tmpl", pattern)
+	if _, err := Templates.ReadFile("templates/" + patternTemplate); err == nil {
+		return patternTemplate
+	}
+
+	fmt.Printf("Pattern template %s not found, using default solution.tmpl\n", patternTemplate)
+	return "solution.tmpl"
+}
+
+func generateSolutionFiles(tx *transaction, basePath, solutionTemplate, moduleName string, year, day int, yearStr, dayStr string) error {
 	files := []struct {
 		TemplateFile string
 		OutputFile   string
@@ -167,81 +210,57 @@ func GenerateFiles(year int, day int, pattern string, withExample bool) error {
 		{"part2.tmpl", "part2.go"},
 	}
 
-	// Process each template
 	for _, file := range files {
 		outputFilePath := filepath.Join(basePath, file.OutputFile)
 
-		// Skip file creation if it already exists
 		if _, err := os.Stat(outputFilePath); err == nil {
 			fmt.Printf("File %s already exists, skipping...\n", outputFilePath)
 			continue
 		}
 
-		templateContent, err := Templates.ReadFile("templates/" + file.TemplateFile)
-		if err != nil {
-			tx.rollback()
-			return fmt.Errorf("error reading template file %s: %w", file.TemplateFile, err)
-		}
-
-		// Parse template
-		tmpl, err := template.New(file.TemplateFile).Parse(string(templateContent))
-		if err != nil {
-			tx.rollback()
-			return fmt.Errorf("error parsing template %s: %w", file.TemplateFile, err)
-		}
-
-		// Prepare template data
-		templateData := struct {
-			ModuleName string
-			Year       int
-			Day        int
-			YearStr    string
-			DayStr     string
-			DayPackage string
-		}{
-			ModuleName: moduleName,
-			Year:       year,
-			Day:        day,
-			YearStr:    yearStr,
-			DayStr:     dayStr,
-			DayPackage: fmt.Sprintf("day%s", dayStr),
-		}
-
-		// Execute template
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, templateData); err != nil {
-			tx.rollback()
-			return fmt.Errorf("error executing template %s: %w", file.TemplateFile, err)
-		}
-
-		// Create the file
-		if err := tx.createFile(outputFilePath, buf.Bytes()); err != nil {
-			tx.rollback()
+		if err := createFileFromTemplate(tx, file.TemplateFile, outputFilePath, moduleName, year, day, yearStr, dayStr); err != nil {
 			return fmt.Errorf("error creating file %s: %w", outputFilePath, err)
 		}
 	}
+	return nil
+}
 
-	// Update the main.go file to add the blank import for the new solution
-	if err := updateMainFileTransactional(tx, moduleName, year, day); err != nil {
-		tx.rollback()
-		return fmt.Errorf("error updating main file: %w", err)
+func createFileFromTemplate(tx *transaction, templateFile, outputPath, moduleName string, year, day int, yearStr, dayStr string) error {
+	templateContent, err := Templates.ReadFile("templates/" + templateFile)
+	if err != nil {
+		return fmt.Errorf("error reading template file %s: %w", templateFile, err)
 	}
 
-	// Create example files if requested
-	if withExample {
-		if err := createExampleFilesTransactional(tx, year, day); err != nil {
-			tx.rollback()
-			return fmt.Errorf("error creating example files: %w", err)
-		}
+	tmpl, err := template.New(templateFile).Parse(string(templateContent))
+	if err != nil {
+		return fmt.Errorf("error parsing template %s: %w", templateFile, err)
 	}
 
-	// Fetch input file
-	if _, err := input.TryRead(year, day); err != nil {
-		tx.rollback()
-		return fmt.Errorf("error fetching input: %w", err)
+	templateData := struct {
+		ModuleName string
+		Year       int
+		Day        int
+		YearStr    string
+		DayStr     string
+		DayPackage string
+	}{
+		ModuleName: moduleName,
+		Year:       year,
+		Day:        day,
+		YearStr:    yearStr,
+		DayStr:     dayStr,
+		DayPackage: fmt.Sprintf("day%s", dayStr),
 	}
 
-	fmt.Printf("Folder and files created successfully at %s\n", basePath)
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, templateData); err != nil {
+		return fmt.Errorf("error executing template %s: %w", templateFile, err)
+	}
+
+	if err := tx.createFile(outputPath, buf.Bytes()); err != nil {
+		return fmt.Errorf("error creating file %s: %w", outputPath, err)
+	}
+
 	return nil
 }
 
@@ -265,7 +284,7 @@ func createExampleFilesTransactional(tx *transaction, year, day int) error {
 	dayFolderName := fmt.Sprintf("day%s", dayStr)
 	
 	// Create the day-specific folder: data/examples/2025/day01/
-	examplesPath := filepath.Join(".", "data", "examples", strconv.Itoa(year), dayFolderName)
+	examplesPath := filepath.Join(".", constants.DataDir, constants.ExamplesDir, strconv.Itoa(year), dayFolderName)
 
 	// Create the directory structure
 	if err := tx.createDir(examplesPath); err != nil {
@@ -273,7 +292,7 @@ func createExampleFilesTransactional(tx *transaction, year, day int) error {
 	}
 
 	// Create example input file: data/examples/2025/day01/input.txt
-	inputFile := filepath.Join(examplesPath, "input.txt")
+	inputFile := filepath.Join(examplesPath, constants.ExampleInputFileName)
 	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
 		content := "# Paste example input here\n"
 		if err := tx.createFile(inputFile, []byte(content)); err != nil {
@@ -284,7 +303,7 @@ func createExampleFilesTransactional(tx *transaction, year, day int) error {
 
 	// Create expected output files for part 1 and part 2: data/examples/2025/day01/part1.txt, part2.txt
 	for _, partNum := range []string{"1", "2"} {
-		outputFile := filepath.Join(examplesPath, fmt.Sprintf("part%s.txt", partNum))
+		outputFile := filepath.Join(examplesPath, fmt.Sprintf(constants.PartFileName, partNum))
 		if _, err := os.Stat(outputFile); os.IsNotExist(err) {
 			content := "# Expected output for part " + partNum + "\n"
 			if err := tx.createFile(outputFile, []byte(content)); err != nil {
@@ -299,67 +318,70 @@ func createExampleFilesTransactional(tx *transaction, year, day int) error {
 
 func updateMainFileTransactional(tx *transaction, moduleName string, year, day int) error {
 	dayStr := fmt.Sprintf("%02d", day)
-	mainFilePath := "main.go"
+	mainFilePath := constants.MainGoFile
 
-	// Check if main.go file exists
 	if _, err := os.Stat(mainFilePath); err != nil {
-		return fmt.Errorf("main.go file does not exist: %w", err)
+		return fmt.Errorf("%s file does not exist: %w", mainFilePath, err)
 	}
 
-	// Read the existing main.go file
 	content, err := os.ReadFile(mainFilePath)
 	if err != nil {
 		return fmt.Errorf("error reading main file: %w", err)
 	}
 
-	contentStr := string(content)
-
-	// Prepare the blank import statement for the new solution
 	importStatement := fmt.Sprintf("_ \"%s/solutions/%d/day%s\"", moduleName, year, dayStr)
-
-	// Check if the import statement already exists
-	importPattern := regexp.MustCompile(regexp.QuoteMeta(importStatement))
-	if importPattern.MatchString(contentStr) {
+	if importExists(string(content), importStatement) {
 		fmt.Printf("Import for %d/day%s already exists, skipping...\n", year, dayStr)
 		return nil
 	}
 
-	// Find the import block - look for "import (" and find the matching ")"
-	importStart := strings.Index(contentStr, "import (")
-	if importStart == -1 {
-		return fmt.Errorf("could not find import block in main.go")
+	updatedContent, err := insertImport(string(content), importStatement)
+	if err != nil {
+		return fmt.Errorf("error inserting import: %w", err)
 	}
 
-	// Find the closing parenthesis of the import block
-	// Start searching from after "import ("
-	searchStart := importStart + len("import (")
-	depth := 1
-	importBlockEnd := -1
-	for i := searchStart; i < len(contentStr); i++ {
-		if contentStr[i] == '(' {
-			depth++
-		} else if contentStr[i] == ')' {
-			depth--
-			if depth == 0 {
-				importBlockEnd = i
-				break
-			}
-		}
-	}
-
-	if importBlockEnd == -1 {
-		return fmt.Errorf("could not find end of import block in main.go")
-	}
-
-	// Insert the new import before the closing parenthesis
-	contentStr = contentStr[:importBlockEnd] + "\t" + importStatement + "\n" + contentStr[importBlockEnd:]
-	fmt.Printf("Added import for %d/day%s\n", year, dayStr)
-
-	// Write the updated content using transaction
-	if err := tx.modifyFile(mainFilePath, []byte(contentStr)); err != nil {
+	if err := tx.modifyFile(mainFilePath, []byte(updatedContent)); err != nil {
 		return fmt.Errorf("error writing main file: %w", err)
 	}
 
-	fmt.Printf("Updated main.go file\n")
+	fmt.Printf("Added import for %d/day%s\n", year, dayStr)
+	fmt.Printf("Updated %s file\n", mainFilePath)
 	return nil
+}
+
+func importExists(content, importStatement string) bool {
+	importPattern := regexp.MustCompile(regexp.QuoteMeta(importStatement))
+	return importPattern.MatchString(content)
+}
+
+func insertImport(content, importStatement string) (string, error) {
+	importStart := strings.Index(content, "import (")
+	if importStart == -1 {
+		return "", fmt.Errorf("could not find import block in main.go")
+	}
+
+	importBlockEnd := findImportBlockEnd(content, importStart)
+	if importBlockEnd == -1 {
+		return "", fmt.Errorf("could not find end of import block in main.go")
+	}
+
+	// Insert the new import before the closing parenthesis
+	updated := content[:importBlockEnd] + "\t" + importStatement + "\n" + content[importBlockEnd:]
+	return updated, nil
+}
+
+func findImportBlockEnd(content string, importStart int) int {
+	searchStart := importStart + len("import (")
+	depth := 1
+	for i := searchStart; i < len(content); i++ {
+		if content[i] == '(' {
+			depth++
+		} else if content[i] == ')' {
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }

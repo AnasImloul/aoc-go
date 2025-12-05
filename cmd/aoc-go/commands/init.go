@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"text/template"
 
+	"github.com/AnasImloul/aoc-go/internal/constants"
+	"github.com/AnasImloul/aoc-go/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,7 @@ var InitCmd = &cobra.Command{
 	Short: "Initialize a new Advent of Code project",
 	Long:  `Create a new Advent of Code project with the necessary structure and configuration.`,
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		projectName := args[0]
 		moduleName, _ := cmd.Flags().GetString("module")
 
@@ -31,10 +31,17 @@ var InitCmd = &cobra.Command{
 		}
 
 		// Get version from root command or build info
-		version := getVersion(cmd)
+		rootVersion := ""
+		if root := cmd.Root(); root != nil {
+			rootVersion = root.Version
+		}
+		version, err := version.GetVersion(rootVersion)
+		if err != nil {
+			return fmt.Errorf("failed to determine version: %w", err)
+		}
 
 		if err := initProject(projectName, moduleName, version); err != nil {
-			log.Fatalf("Error initializing project: %v", err)
+			return fmt.Errorf("error initializing project: %w", err)
 		}
 
 		fmt.Printf("\n✓ Project '%s' created successfully!\n\n", projectName)
@@ -44,6 +51,7 @@ var InitCmd = &cobra.Command{
 		fmt.Println("  aoc-go generate 2024 1")
 		fmt.Println("  aoc-go run 2024 1 1")
 		fmt.Println()
+		return nil
 	},
 }
 
@@ -52,16 +60,32 @@ func init() {
 }
 
 func initProject(projectName, moduleName, version string) error {
-	// Create project directory
+	if err := createProjectDirectories(projectName); err != nil {
+		return err
+	}
+
+	templateData := newTemplateData(moduleName, version, projectName)
+	if err := createProjectFiles(projectName, templateData); err != nil {
+		return err
+	}
+
+	if err := runGoModTidy(projectName); err != nil {
+		return err
+	}
+
+	fmt.Printf("Created project structure for '%s'\n", projectName)
+	return nil
+}
+
+func createProjectDirectories(projectName string) error {
 	if err := os.MkdirAll(projectName, 0755); err != nil {
 		return fmt.Errorf("failed to create project directory: %w", err)
 	}
 
-	// Create subdirectories
 	dirs := []string{
-		"solutions",
-		"data/inputs",
-		"data/examples",
+		constants.SolutionsDir,
+		filepath.Join(constants.DataDir, constants.InputsDir),
+		filepath.Join(constants.DataDir, constants.ExamplesDir),
 	}
 
 	for _, dir := range dirs {
@@ -70,9 +94,15 @@ func initProject(projectName, moduleName, version string) error {
 			return fmt.Errorf("failed to create directory %s: %w", path, err)
 		}
 	}
+	return nil
+}
 
-	// Template data
-	templateData := struct {
+func newTemplateData(moduleName, version, projectName string) struct {
+	ModuleName  string
+	Version     string
+	ProjectName string
+} {
+	return struct {
 		ModuleName  string
 		Version     string
 		ProjectName string
@@ -81,8 +111,9 @@ func initProject(projectName, moduleName, version string) error {
 		Version:     version,
 		ProjectName: projectName,
 	}
+}
 
-	// Create files from templates
+func createProjectFiles(projectName string, templateData interface{}) error {
 	files := []struct {
 		TemplatePath string
 		OutputPath   string
@@ -96,83 +127,22 @@ func initProject(projectName, moduleName, version string) error {
 	}
 
 	for _, file := range files {
-		if err := createFileFromTemplate(initTemplates, file.TemplatePath, filepath.Join(projectName, file.OutputPath), templateData); err != nil {
+		outputPath := filepath.Join(projectName, file.OutputPath)
+		if err := createFileFromTemplate(initTemplates, file.TemplatePath, outputPath, templateData); err != nil {
 			return fmt.Errorf("failed to create %s: %w", file.OutputPath, err)
 		}
 	}
-
-	fmt.Printf("Created project structure for '%s'\n", projectName)
 	return nil
 }
 
-// getVersion retrieves the version of aoc-go
-// For released binaries: uses root command version (set by goreleaser via -X main.version)
-// For dev builds: tries to get latest git tag, falls back to latest known release
-func getVersion(cmd *cobra.Command) string {
-	root := cmd.Root()
-	
-	// Try to get from root command (set by goreleaser via -X main.version)
-	// This works for released binaries
-	if root != nil && root.Version != "" && root.Version != "dev" {
-		// Ensure it has 'v' prefix
-		version := strings.TrimPrefix(root.Version, "v")
-		return "v" + version
+func runGoModTidy(projectName string) error {
+	fmt.Printf("Downloading dependencies...\n")
+	modTidyCmd := exec.Command("go", "mod", "tidy")
+	modTidyCmd.Dir = projectName
+	if output, err := modTidyCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to run go mod tidy: %w\noutput: %s", err, string(output))
 	}
-
-	// For dev builds, try to get the latest git tag
-	// This ensures we pin to a specific version for reproducible builds
-	if version := getLatestGitTag(); version != "" {
-		return version
-	}
-
-	// Fallback to latest known release if git is not available
-	// Update this when releasing new versions
-	return "v0.1.4"
-}
-
-// getLatestGitTag tries to get the latest git tag from the repository
-func getLatestGitTag() string {
-	// Try to find the aoc-go source directory
-	// Check if we're in a git repository
-	cmd := exec.Command("git", "describe", "--tags", "--abbrev=0")
-	cmd.Dir = findSourceDir()
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	
-	tag := strings.TrimSpace(string(output))
-	if tag != "" && strings.HasPrefix(tag, "v") {
-		return tag
-	}
-	return ""
-}
-
-// findSourceDir tries to find the aoc-go source directory
-func findSourceDir() string {
-	// Try to find go.mod that contains aoc-go module
-	wd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-
-	// Check current directory and parent directories
-	for i := 0; i < 10; i++ {
-		goModPath := filepath.Join(wd, "go.mod")
-		if data, err := os.ReadFile(goModPath); err == nil {
-			if strings.Contains(string(data), "module github.com/AnasImloul/aoc-go") {
-				return wd
-			}
-		}
-		parent := filepath.Dir(wd)
-		if parent == wd {
-			break // Reached root
-		}
-		wd = parent
-	}
-
-	// Fallback to current directory
-	return "."
+	return nil
 }
 
 // createFileFromTemplate creates a file from an embedded template
@@ -198,5 +168,3 @@ func createFileFromTemplate(fs embed.FS, templatePath, outputPath string, data i
 
 	return nil
 }
-
-

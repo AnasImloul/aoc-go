@@ -2,9 +2,9 @@ package commands
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 
+	"github.com/AnasImloul/aoc-go/internal/validation"
 	"github.com/AnasImloul/aoc-go/pkg/generator"
 	"github.com/spf13/cobra"
 )
@@ -14,21 +14,26 @@ var GenerateCmd = &cobra.Command{
 	Short: "Generate template files for a new day",
 	Long:  `Generate template files for a new Advent of Code day including base, first, and second files.`,
 	Args:  cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		year, err := strconv.Atoi(args[0])
 		if err != nil {
-			log.Fatalf("Invalid year: %v", err)
+			return fmt.Errorf("invalid year: %w", err)
 		}
+
 		day, err := strconv.Atoi(args[1])
 		if err != nil {
-			log.Fatalf("Invalid day: %v", err)
+			return fmt.Errorf("invalid day: %w", err)
+		}
+
+		if err := validation.ValidateYearAndDay(year, day); err != nil {
+			return err
 		}
 
 		pattern, _ := cmd.Flags().GetString("pattern")
 		withExample, _ := cmd.Flags().GetBool("example")
 
 		if err := generator.GenerateFiles(year, day, pattern, withExample); err != nil {
-			log.Fatalf("Error generating files: %v", err)
+			return fmt.Errorf("error generating files: %w", err)
 		}
 
 		fmt.Printf("Generated files for year %d day %d\n", year, day)
@@ -38,6 +43,7 @@ var GenerateCmd = &cobra.Command{
 		if withExample {
 			fmt.Printf("   Generated example input file\n")
 		}
+		return nil
 	},
 }
 

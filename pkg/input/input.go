@@ -17,17 +17,20 @@ package input
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/AnasImloul/aoc-go/internal/constants"
 	"github.com/joho/godotenv"
 )
 
-const baseURL = "https://adventofcode.com"
+const baseURL = constants.AdventOfCodeBaseURL
 
 // Read reads the content of the input file for the given year and day.
 // If AOC_TEST_INPUT env var is set, it returns that instead (for testing).
@@ -47,11 +50,11 @@ func Read(year, day int) string {
 // Returns an error if the input cannot be read or fetched.
 func TryRead(year, day int) (string, error) {
 	// Check for test input override
-	if testInput := os.Getenv("AOC_TEST_INPUT"); testInput != "" {
+	if testInput := os.Getenv(constants.EnvTestInput); testInput != "" {
 		return testInput, nil
 	}
 
-	filename := fmt.Sprintf("data/inputs/%d/day_%02d.txt", year, day)
+	filename := filepath.Join(constants.DataDir, constants.InputsDir, fmt.Sprintf("%d", year), fmt.Sprintf(constants.InputFileName, day))
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		input, fetchErr := fetchAndSaveInput(year, day, filename)
@@ -83,14 +86,14 @@ func TryReadLines(year, day int) (<-chan string, <-chan error) {
 		defer close(errChan)
 
 		// Check for test input override
-		if testInput := os.Getenv("AOC_TEST_INPUT"); testInput != "" {
+		if testInput := os.Getenv(constants.EnvTestInput); testInput != "" {
 			for _, line := range strings.Split(testInput, "\n") {
 				lines <- line
 			}
 			return
 		}
 
-		filename := fmt.Sprintf("data/inputs/%d/day_%02d.txt", year, day)
+		filename := filepath.Join(constants.DataDir, constants.InputsDir, fmt.Sprintf("%d", year), fmt.Sprintf(constants.InputFileName, day))
 		file, err := os.Open(filename)
 		if err != nil {
 			errChan <- fmt.Errorf("failed to open file %s: %w", filename, err)
@@ -112,20 +115,28 @@ func TryReadLines(year, day int) (<-chan string, <-chan error) {
 
 // fetchAndSaveInput fetches the input from the Advent of Code website and saves it locally.
 func fetchAndSaveInput(year, day int, filename string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return fetchAndSaveInputWithContext(ctx, year, day, filename)
+}
+
+// fetchAndSaveInputWithContext fetches the input from the Advent of Code website and saves it locally.
+// The context can be used to cancel the request or set a timeout.
+func fetchAndSaveInputWithContext(ctx context.Context, year, day int, filename string) (string, error) {
 	// Load the environment variables (ignore error if .env doesn't exist)
 	_ = godotenv.Load()
 
 	// Get the session cookie from the environment variables
-	sessionCookie := os.Getenv("SESSION_COOKIE")
+	sessionCookie := os.Getenv(constants.SessionCookieEnv)
 	if sessionCookie == "" {
-		return "", fmt.Errorf("SESSION_COOKIE is not set in environment variables; add it to your .env file")
+		return "", fmt.Errorf("%s is not set in environment variables; add it to your .env file", constants.SessionCookieEnv)
 	}
 
 	// Construct the URL for the input
 	url := fmt.Sprintf("%s/%d/day/%d/input", baseURL, year, day)
 
-	// Create the HTTP request
-	req, err := http.NewRequest("GET", url, nil)
+	// Create the HTTP request with context
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -133,16 +144,24 @@ func fetchAndSaveInput(year, day int, filename string) (string, error) {
 	// Add the session cookie for authentication
 	req.AddCookie(&http.Cookie{Name: "session", Value: sessionCookie})
 
-	// Send the request
-	client := &http.Client{}
+	// Send the request with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("request timeout: %w", err)
+		}
+		if ctx.Err() == context.Canceled {
+			return "", fmt.Errorf("request canceled: %w", err)
+		}
 		return "", fmt.Errorf("failed to fetch input: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Check for errors in the response
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != constants.HTTPStatusOK {
 		return "", fmt.Errorf("failed to fetch input: HTTP %d", resp.StatusCode)
 	}
 

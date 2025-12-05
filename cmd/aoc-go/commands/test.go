@@ -1,16 +1,18 @@
 package commands
 
 import (
-	_ "encoding/json" // Used by readResultFile in run.go
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/AnasImloul/aoc-go/internal/build"
+	"github.com/AnasImloul/aoc-go/internal/constants"
 	"github.com/AnasImloul/aoc-go/internal/part"
+	resultpkg "github.com/AnasImloul/aoc-go/internal/result"
+	"github.com/AnasImloul/aoc-go/internal/validation"
 	"github.com/spf13/cobra"
 )
 
@@ -19,14 +21,19 @@ var TestCmd = &cobra.Command{
 	Short: "Test a solution against example input",
 	Long:  `Test a solution for a specific Advent of Code day against the example input and expected output.`,
 	Args:  cobra.RangeArgs(2, 3),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		year, err := strconv.Atoi(args[0])
 		if err != nil {
-			log.Fatalf("Invalid year: %v", err)
+			return fmt.Errorf("invalid year: %w", err)
 		}
+
 		day, err := strconv.Atoi(args[1])
 		if err != nil {
-			log.Fatalf("Invalid day: %v", err)
+			return fmt.Errorf("invalid day: %w", err)
+		}
+
+		if err := validation.ValidateYearAndDay(year, day); err != nil {
+			return err
 		}
 
 		// Determine which parts to test
@@ -34,32 +41,30 @@ var TestCmd = &cobra.Command{
 		if len(args) == 3 {
 			p := part.Normalize(args[2])
 			if p == "" {
-				log.Fatalf("Invalid part: %s (must be '1', '2', 'first', or 'second')", args[2])
+				return fmt.Errorf("invalid part: %s (must be '1', '2', 'first', or 'second')", args[2])
 			}
 			parts = []string{p}
 		}
 
 		// Check if we're in a project directory with main.go
-		if _, err := os.Stat("main.go"); err == nil {
-			runProjectTests(year, day, parts)
-			return
+		if _, err := os.Stat(constants.MainGoFile); err == nil {
+			return runProjectTests(year, day, parts)
 		}
 
-		log.Fatal("No main.go found in current directory. Please run this command from your aoc-go project root.")
+		return fmt.Errorf("no %s found in current directory: please run this command from your aoc-go project root", constants.MainGoFile)
 	},
 }
 
-func runProjectTests(year, day int, parts []string) {
+func runProjectTests(year, day int, parts []string) error {
 	fmt.Printf("Testing Year %d Day %d\n\n", year, day)
 
 	// Build the project
-	if err := buildProject(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v", err)
-		os.Exit(1)
+	if err := build.BuildProject(build.BinaryName); err != nil {
+		return fmt.Errorf("failed to build project: %w", err)
 	}
 
 	// Clean up binary after we're done
-	defer os.Remove(binaryName)
+	defer os.Remove(build.BinaryName)
 
 	allPassed := true
 	for _, p := range parts {
@@ -72,7 +77,7 @@ func runProjectTests(year, day int, parts []string) {
 		}
 
 		if result.passed {
-			fmt.Printf("  Part %s: [PASS] got %v [%s]\n", part.Label(p), result.actual, formatExecutionTime(result.timeMicros))
+			fmt.Printf("  Part %s: [PASS] got %v [%s]\n", part.Label(p), result.actual, resultpkg.FormatExecutionTime(result.timeMicros))
 		} else {
 			fmt.Printf("  Part %s: [FAIL]\n", part.Label(p))
 			fmt.Printf("           Expected: %v\n", result.expected)
@@ -87,6 +92,8 @@ func runProjectTests(year, day int, parts []string) {
 	} else {
 		fmt.Println("Some tests failed.")
 	}
+
+	return nil
 }
 
 type testResult struct {
@@ -109,19 +116,19 @@ func runTestFallback(year, day int, p string) (*testResult, error) {
 	var expected string
 
 	// Use new folder structure: data/examples/2025/day01/input.txt and part1.txt
-	dayFolderPath := fmt.Sprintf("data/examples/%d/%s", year, dayFolderName)
-	inputFile := filepath.Join(dayFolderPath, "input.txt")
-	partFile := filepath.Join(dayFolderPath, fmt.Sprintf("part%s.txt", partNum))
+	dayFolderPath := filepath.Join(constants.DataDir, constants.ExamplesDir, fmt.Sprintf("%d", year), dayFolderName)
+	inputFile := filepath.Join(dayFolderPath, constants.ExampleInputFileName)
+	partFile := filepath.Join(dayFolderPath, fmt.Sprintf(constants.PartFileName, partNum))
 
 	inputContent, err := os.ReadFile(inputFile)
 	if err != nil {
-		return nil, fmt.Errorf("example input file not found: %s", inputFile)
+		return nil, fmt.Errorf("example input file not found: %s: %w", inputFile, err)
 	}
 	exampleInput = strings.TrimSpace(string(inputContent))
 
 	partContent, err := os.ReadFile(partFile)
 	if err != nil {
-		return nil, fmt.Errorf("expected output file not found: %s", partFile)
+		return nil, fmt.Errorf("expected output file not found: %s: %w", partFile, err)
 	}
 	expected = strings.TrimSpace(string(partContent))
 
@@ -133,33 +140,33 @@ func runTestFallback(year, day int, p string) (*testResult, error) {
 	}
 
 	// Create temporary result file
-	resultFile, err := os.CreateTemp("", "aoc-result-*.json")
+	resultFile, err := os.CreateTemp("", constants.ResultFilePrefix+"*"+constants.ResultFileSuffix)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create result file: %v", err)
+		return nil, fmt.Errorf("failed to create result file: %w", err)
 	}
 	resultFilePath := resultFile.Name()
 	resultFile.Close()
 	defer os.Remove(resultFilePath)
 
 	// Run solution with example input using the cached binary
-	cmd := exec.Command("./"+binaryName, strconv.Itoa(year), strconv.Itoa(day), partNum)
+	cmd := exec.Command("./"+build.BinaryName, strconv.Itoa(year), strconv.Itoa(day), partNum)
 	cmd.Dir, _ = os.Getwd()
 
 	// Set environment variables
-	cmd.Env = append(os.Environ(), "AOC_TEST_INPUT="+exampleInput, "AOC_RESULT_FILE="+resultFilePath)
+	cmd.Env = append(os.Environ(), constants.EnvTestInput+"="+exampleInput, constants.EnvResultFile+"="+resultFilePath)
 
 	// Write stdout/stderr directly to terminal for user logs
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to run solution: %v", err)
+		return nil, fmt.Errorf("failed to run solution: %w", err)
 	}
 
 	// Read result from file
-	resultData, err := readResultFile(resultFilePath)
+	resultData, err := resultpkg.ReadFromFile(resultFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read result file: %v", err)
+		return nil, fmt.Errorf("failed to read result file: %w", err)
 	}
 
 	// Answer is already a string
