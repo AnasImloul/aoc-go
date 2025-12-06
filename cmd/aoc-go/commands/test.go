@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/AnasImloul/aoc-go/internal/build"
 	"github.com/AnasImloul/aoc-go/internal/constants"
@@ -124,13 +123,13 @@ func runTestFallback(year, day int, p string) (*testResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("example input file not found: %s: %w", inputFile, err)
 	}
-	exampleInput = strings.TrimSpace(string(inputContent))
+	exampleInput = string(inputContent)
 
 	partContent, err := os.ReadFile(partFile)
 	if err != nil {
 		return nil, fmt.Errorf("expected output file not found: %s: %w", partFile, err)
 	}
-	expected = strings.TrimSpace(string(partContent))
+	expected = string(partContent)
 
 	if exampleInput == "" {
 		return nil, fmt.Errorf("no example input found")

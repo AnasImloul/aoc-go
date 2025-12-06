@@ -69,7 +69,7 @@ func readExampleInput(year, day int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(data)), nil
+	return string(data), nil
 }
 
 // readExpectedOutput reads the expected output for the given year, day, and part
@@ -83,7 +83,7 @@ func readExpectedOutput(year, day int, part string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(data)), nil
+	return string(data), nil
 }
 
 

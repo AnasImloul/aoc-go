@@ -63,7 +63,7 @@ func TryRead(year, day int) (string, error) {
 		}
 		return input, nil
 	}
-	return strings.TrimSpace(string(data)), nil
+	return string(data), nil
 }
 
 // ReadLines returns a channel that streams lines from the input file for the given year and day.
@@ -178,7 +178,7 @@ func fetchAndSaveInputWithContext(ctx context.Context, year, day int, filename s
 		return "", fmt.Errorf("failed to save input: %w", err)
 	}
 
-	return strings.TrimSpace(input), nil
+	return input, nil
 }
 
 // saveInputToFile saves the input to the specified file.
