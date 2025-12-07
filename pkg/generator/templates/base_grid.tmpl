@@ -9,7 +9,7 @@ import (
 
 type Day struct {
 	solver.Base
-	grid []string
+	grid [][]byte
 	rows int
 	cols int
 }
@@ -29,10 +29,19 @@ func init() {
 }
 
 func (d *Day) parse(input string) error {
-	d.grid = strings.Split(strings.TrimSpace(input), "\n")
-	d.rows = len(d.grid)
+	lines := strings.Split(input, "\n")
+	// Remove empty string at the end if input ends with newline
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	d.rows = len(lines)
 	if d.rows > 0 {
-		d.cols = len(d.grid[0])
+		d.cols = len(lines[0])
+	}
+	// Convert []string to [][]byte
+	d.grid = make([][]byte, d.rows)
+	for i, line := range lines {
+		d.grid[i] = []byte(line)
 	}
 	return nil
 }
@@ -46,4 +55,11 @@ func (d *Day) getCell(row, col int) byte {
 		return 0
 	}
 	return d.grid[row][col]
+}
+
+func (d *Day) setCell(row, col int, value byte) {
+	if !d.inBounds(row, col) {
+		return
+	}
+	d.grid[row][col] = value
 }

@@ -50,7 +50,8 @@ func Read(year, day int) string {
 // Returns an error if the input cannot be read or fetched.
 func TryRead(year, day int) (string, error) {
 	// Check for test input override
-	if testInput := os.Getenv(constants.EnvTestInput); testInput != "" {
+	// Use LookupEnv to get the exact value, including trailing spaces
+	if testInput, ok := os.LookupEnv(constants.EnvTestInput); ok && testInput != "" {
 		return testInput, nil
 	}
 
@@ -86,7 +87,8 @@ func TryReadLines(year, day int) (<-chan string, <-chan error) {
 		defer close(errChan)
 
 		// Check for test input override
-		if testInput := os.Getenv(constants.EnvTestInput); testInput != "" {
+		// Use LookupEnv to get the exact value, including trailing spaces
+		if testInput, ok := os.LookupEnv(constants.EnvTestInput); ok && testInput != "" {
 			for _, line := range strings.Split(testInput, "\n") {
 				lines <- line
 			}
