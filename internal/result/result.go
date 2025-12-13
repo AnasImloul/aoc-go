@@ -38,9 +38,3 @@ func FormatExecutionTime(micros int64) string {
 		return fmt.Sprintf("%.2f s", float64(micros)/1000000.0)
 	}
 }
-
-
-
-
-
-

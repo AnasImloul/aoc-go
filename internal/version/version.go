@@ -99,9 +99,3 @@ func findSourceDir() string {
 	// Fallback to current directory
 	return "."
 }
-
-
-
-
-
-

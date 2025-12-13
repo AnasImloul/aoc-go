@@ -15,5 +15,3 @@ func DistanceSquared[T solver.Numeric](point1, point2 solver.Point[T]) T {
 	dx, dy := point1.X-point2.X, point1.Y-point2.Y
 	return dx*dx + dy*dy
 }
-
-

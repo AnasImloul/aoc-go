@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"github.com/AnasImloul/aoc-go/pkg/utils"
 	"os"
 
 	"github.com/AnasImloul/aoc-go/cmd/aoc-go/commands"
-	"github.com/AnasImloul/aoc-go/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -32,5 +32,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-
