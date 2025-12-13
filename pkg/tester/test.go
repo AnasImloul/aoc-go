@@ -85,5 +85,3 @@ func readExpectedOutput(year, day int, part string) (string, error) {
 	}
 	return string(data), nil
 }
-
-

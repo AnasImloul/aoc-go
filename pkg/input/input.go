@@ -69,6 +69,7 @@ func TryRead(year, day int) (string, error) {
 
 // ReadLines returns a channel that streams lines from the input file for the given year and day.
 // If AOC_TEST_INPUT env var is set, it streams lines from that instead (for testing).
+// If the file does not exist, it fetches the input from the Advent of Code website and saves it.
 // Errors are sent to the returned error channel.
 func ReadLines(year, day int) <-chan string {
 	lines, _ := TryReadLines(year, day)
@@ -77,6 +78,7 @@ func ReadLines(year, day int) <-chan string {
 
 // TryReadLines returns a channel that streams lines from the input file for the given year and day.
 // If AOC_TEST_INPUT env var is set, it streams lines from that instead (for testing).
+// If the file does not exist, it fetches the input from the Advent of Code website and saves it.
 // Returns a lines channel and an error channel. Errors during reading are sent to the error channel.
 func TryReadLines(year, day int) (<-chan string, <-chan error) {
 	lines := make(chan string, 100) // Buffered channel for better performance
@@ -96,6 +98,16 @@ func TryReadLines(year, day int) (<-chan string, <-chan error) {
 		}
 
 		filename := filepath.Join(constants.DataDir, constants.InputsDir, fmt.Sprintf("%d", year), fmt.Sprintf(constants.InputFileName, day))
+
+		// Ensure the file exists by fetching it if it doesn't
+		if _, err := os.Stat(filename); os.IsNotExist(err) {
+			_, fetchErr := fetchAndSaveInput(year, day, filename)
+			if fetchErr != nil {
+				errChan <- fmt.Errorf("failed to fetch input for year %d day %d: %w", year, day, fetchErr)
+				return
+			}
+		}
+
 		file, err := os.Open(filename)
 		if err != nil {
 			errChan <- fmt.Errorf("failed to open file %s: %w", filename, err)

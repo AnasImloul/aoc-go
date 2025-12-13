@@ -22,8 +22,8 @@ var Templates embed.FS
 
 // transaction tracks all changes made during generation for rollback
 type transaction struct {
-	createdFiles []string
-	createdDirs  []string
+	createdFiles  []string
+	createdDirs   []string
 	modifiedFiles map[string][]byte // original content for rollback
 }
 
@@ -282,7 +282,7 @@ func getModuleName() (string, error) {
 func createExampleFilesTransactional(tx *transaction, year, day int) error {
 	dayStr := fmt.Sprintf("%02d", day)
 	dayFolderName := fmt.Sprintf("day%s", dayStr)
-	
+
 	// Create the day-specific folder: data/examples/2025/day01/
 	examplesPath := filepath.Join(".", constants.DataDir, constants.ExamplesDir, strconv.Itoa(year), dayFolderName)
 

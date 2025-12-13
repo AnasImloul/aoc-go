@@ -51,5 +51,3 @@ func init() {
 	GenerateCmd.Flags().StringP("pattern", "p", "", "Template pattern (parser, grid, graph, simulation)")
 	GenerateCmd.Flags().BoolP("example", "e", true, "Generate example input file")
 }
-
-

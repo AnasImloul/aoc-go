@@ -34,5 +34,3 @@ func (p Point3D[T]) Add(other Point3D[T]) Point3D[T] {
 func (p Point3D[T]) Sub(other Point3D[T]) Point3D[T] {
 	return Point3D[T]{X: p.X - other.X, Y: p.Y - other.Y, Z: p.Z - other.Z}
 }
-
-

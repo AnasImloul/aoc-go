@@ -59,9 +59,3 @@ const (
 	// HTTPStatusOK is the HTTP status code for successful requests.
 	HTTPStatusOK = 200
 )
-
-
-
-
-
-
