@@ -137,5 +137,3 @@ func Min[T Numerical](input []T) T {
 		return acc
 	})
 }
-
-
