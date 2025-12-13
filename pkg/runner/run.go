@@ -16,5 +16,3 @@ func Solution(year, day int, part string) any {
 	}
 	return solver.Solve(part)
 }
-
-

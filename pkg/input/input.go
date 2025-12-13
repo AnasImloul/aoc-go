@@ -16,7 +16,6 @@
 package input
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -31,6 +30,25 @@ import (
 )
 
 const baseURL = constants.AdventOfCodeBaseURL
+
+// trimTrailingEmptyLines removes trailing lines that contain only whitespace.
+// Lines with actual data but trailing spaces are preserved.
+func trimTrailingEmptyLines(lines []string) []string {
+	// Find the last line that contains non-whitespace characters
+	lastNonEmpty := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			lastNonEmpty = i
+			break
+		}
+	}
+	// If all lines are empty, return empty slice
+	if lastNonEmpty == -1 {
+		return []string{}
+	}
+	// Return lines up to and including the last non-empty line
+	return lines[:lastNonEmpty+1]
+}
 
 // Read reads the content of the input file for the given year and day.
 // If AOC_TEST_INPUT env var is set, it returns that instead (for testing).
@@ -52,7 +70,10 @@ func TryRead(year, day int) (string, error) {
 	// Check for test input override
 	// Use LookupEnv to get the exact value, including trailing spaces
 	if testInput, ok := os.LookupEnv(constants.EnvTestInput); ok && testInput != "" {
-		return testInput, nil
+		// Trim trailing empty lines from test input for consistency
+		lines := strings.Split(testInput, "\n")
+		lines = trimTrailingEmptyLines(lines)
+		return strings.Join(lines, "\n"), nil
 	}
 
 	filename := filepath.Join(constants.DataDir, constants.InputsDir, fmt.Sprintf("%d", year), fmt.Sprintf(constants.InputFileName, day))
@@ -62,13 +83,20 @@ func TryRead(year, day int) (string, error) {
 		if fetchErr != nil {
 			return "", fetchErr
 		}
-		return input, nil
+		// Trim trailing empty lines from fetched input
+		lines := strings.Split(input, "\n")
+		lines = trimTrailingEmptyLines(lines)
+		return strings.Join(lines, "\n"), nil
 	}
-	return string(data), nil
+	// Trim trailing empty lines from file content
+	lines := strings.Split(string(data), "\n")
+	lines = trimTrailingEmptyLines(lines)
+	return strings.Join(lines, "\n"), nil
 }
 
 // ReadLines returns a channel that streams lines from the input file for the given year and day.
 // If AOC_TEST_INPUT env var is set, it streams lines from that instead (for testing).
+// If the file does not exist, it fetches the input from the Advent of Code website and saves it.
 // Errors are sent to the returned error channel.
 func ReadLines(year, day int) <-chan string {
 	lines, _ := TryReadLines(year, day)
@@ -77,7 +105,9 @@ func ReadLines(year, day int) <-chan string {
 
 // TryReadLines returns a channel that streams lines from the input file for the given year and day.
 // If AOC_TEST_INPUT env var is set, it streams lines from that instead (for testing).
+// If the file does not exist, it fetches the input from the Advent of Code website and saves it.
 // Returns a lines channel and an error channel. Errors during reading are sent to the error channel.
+// This function is a wrapper around TryRead that splits the input into lines and streams them.
 func TryReadLines(year, day int) (<-chan string, <-chan error) {
 	lines := make(chan string, 100) // Buffered channel for better performance
 	errChan := make(chan error, 1)
@@ -86,29 +116,18 @@ func TryReadLines(year, day int) (<-chan string, <-chan error) {
 		defer close(lines)
 		defer close(errChan)
 
-		// Check for test input override
-		// Use LookupEnv to get the exact value, including trailing spaces
-		if testInput, ok := os.LookupEnv(constants.EnvTestInput); ok && testInput != "" {
-			for _, line := range strings.Split(testInput, "\n") {
-				lines <- line
-			}
-			return
-		}
-
-		filename := filepath.Join(constants.DataDir, constants.InputsDir, fmt.Sprintf("%d", year), fmt.Sprintf(constants.InputFileName, day))
-		file, err := os.Open(filename)
+		// Reuse TryRead to get the input (handles test input, file reading, fetching, and trimming)
+		input, err := TryRead(year, day)
 		if err != nil {
-			errChan <- fmt.Errorf("failed to open file %s: %w", filename, err)
+			errChan <- err
 			return
 		}
-		defer file.Close()
 
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			lines <- scanner.Text()
-		}
-		if err := scanner.Err(); err != nil {
-			errChan <- fmt.Errorf("error reading file %s: %w", filename, err)
+		// Split into lines and stream them
+		// Note: TryRead already handles trimming trailing empty lines, so we just split
+		inputLines := strings.Split(input, "\n")
+		for _, line := range inputLines {
+			lines <- line
 		}
 	}()
 

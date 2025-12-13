@@ -27,9 +27,3 @@ func BuildProject(binaryName string) error {
 	}
 	return nil
 }
-
-
-
-
-
-

@@ -74,4 +74,3 @@ func ValidateYearAndDay(year, day int) error {
 
 	return nil
 }
-
